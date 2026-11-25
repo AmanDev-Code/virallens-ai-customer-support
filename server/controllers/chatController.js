@@ -1,26 +1,56 @@
 const Chat = require('../models/Chat');
-const { hybridSearch, seedKnowledgeBase } = require('../services/ragService');
+const UserDocument = require('../models/UserDocument');
+const { hybridSearch, generateEmbedding, seedKnowledgeBase } = require('../services/ragService');
 
-// Seed knowledge base on startup
+// Ensure knowledge base is seeded
 seedKnowledgeBase().catch(err => console.error('Failed to seed KB:', err));
 
-// Circuit Breaker State
+// Circuit Breaker State & Guardrails
 let circuitState = 'CLOSED'; // CLOSED, OPEN, HALF-OPEN
 let failureCount = 0;
 let lastFailureTime = null;
 const FAILURE_THRESHOLD = 3;
 const RESET_TIMEOUT_MS = 30000; // 30 seconds
+const MAX_RETRIES = 2;
+
+function cosineSimilarity(a, b) {
+  if (!a || !b || a.length !== b.length) return 0;
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB) || 1);
+}
+
+async function searchUserDocuments(userId, query) {
+  try {
+    const userDocs = await UserDocument.find({ userId, embedding: { $exists: true, $ne: [] } });
+    if (userDocs.length === 0) return '';
+
+    const queryEmbedding = await generateEmbedding(query);
+    const scored = userDocs.map(doc => ({
+      doc,
+      score: cosineSimilarity(queryEmbedding, doc.embedding)
+    })).sort((a, b) => b.score - a.score);
+
+    if (scored.length > 0 && scored[0].score > 0.3) {
+      return `[User Uploaded Memory: ${scored[0].doc.originalName}]\n${scored[0].doc.extractedText}`;
+    }
+  } catch (err) {
+    console.error('User doc vector search error:', err.message);
+  }
+  return '';
+}
 
 async function callAIAgentWithResilience(messages, ragContext = '', attempt = 1) {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
-  // Check Circuit Breaker
   if (circuitState === 'OPEN') {
     if (Date.now() - lastFailureTime > RESET_TIMEOUT_MS) {
       circuitState = 'HALF-OPEN';
-      console.log('Circuit breaker entering HALF-OPEN state.');
     } else {
-      console.warn('Circuit breaker is OPEN. Falling back to support assistant mode.');
       return getFallbackResponse(messages, ragContext);
     }
   }
@@ -31,14 +61,14 @@ async function callAIAgentWithResilience(messages, ragContext = '', attempt = 1)
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
 
-    const systemPrompt = `You are an expert, professional, and empathetic AI customer support agent for Virallens, an AI-Native Autonomous Growth & Support platform.
-Use the following Verified Knowledge Base Context to answer the user's question accurately. If the context does not contain the exact answer, use your professional judgment as a support agent while staying aligned with Virallens features.
+    const systemPrompt = `You are an elite, professional, and empathetic AI customer support lead for Virallens, an AI-Native Autonomous Growth & Support operating system.
+Use the following Verified Knowledge Base Context and User Memory to answer the user's question accurately.
 
---- Verified Knowledge Base Context ---
-${ragContext || 'No specific knowledge base article matched. Provide standard professional support.'}
---------------------------------------`;
+--- Verified Knowledge Base & User Memory Context ---
+${ragContext || 'No specific knowledge base article matched.'}
+------------------------------------------------------`;
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -53,7 +83,9 @@ ${ragContext || 'No specific knowledge base article matched. Provide standard pr
         messages: [
           { role: 'system', content: systemPrompt },
           ...messages
-        ]
+        ],
+        temperature: 0.3,
+        max_tokens: 1024
       }),
       signal: controller.signal
     });
@@ -77,9 +109,8 @@ ${ragContext || 'No specific knowledge base article matched. Provide standard pr
   } catch (error) {
     console.error(`AI call attempt ${attempt} failed:`, error.message);
 
-    if (attempt < 3) {
-      const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
-      console.log(`Retrying AI call in ${Math.round(delay)}ms...`);
+    if (attempt <= MAX_RETRIES) {
+      const delay = Math.min(Math.pow(2, attempt) * 1000, 4000) + Math.random() * 300;
       await new Promise(resolve => setTimeout(resolve, delay));
       return callAIAgentWithResilience(messages, ragContext, attempt + 1);
     }
@@ -88,7 +119,6 @@ ${ragContext || 'No specific knowledge base article matched. Provide standard pr
     if (failureCount >= FAILURE_THRESHOLD) {
       circuitState = 'OPEN';
       lastFailureTime = Date.now();
-      console.error('Circuit breaker tripped to OPEN due to repeated failures.');
     }
 
     return getFallbackResponse(messages, ragContext);
@@ -99,17 +129,15 @@ function getFallbackResponse(messages, ragContext) {
   const lastMsg = messages[messages.length - 1].content.toLowerCase();
 
   if (ragContext) {
-    return `Based on our knowledge base:\n\n${ragContext.substring(0, 400)}...\n\nHow else can I assist you with Virallens today?`;
+    return `Based on Virallens documentation and your uploaded memory:\n\n${ragContext.substring(0, 500)}\n\nHow else can I assist you with your growth workflows today?`;
   }
 
   if (lastMsg.includes('hello') || lastMsg.includes('hi')) {
-    return "Hello! Welcome to Virallens Customer Support. How can I assist you with our platform today?";
+    return "Hello! Welcome to Virallens Support. I am your autonomous AI growth and support assistant. How can I help optimize your workflows today?";
   } else if (lastMsg.includes('pricing') || lastMsg.includes('cost')) {
-    return "Virallens offers flexible pricing plans tailored for creators and growth teams starting at $29/month (Starter), $79/month (Growth), and Enterprise options. Would you like a full feature breakdown?";
-  } else if (lastMsg.includes('bug') || lastMsg.includes('error') || lastMsg.includes('issue')) {
-    return "I'm sorry to hear you're experiencing an issue. Please share the details or error message so I can log this for our engineering team.";
+    return "Virallens offers flexible pricing tailored for creators and growth teams: Starter ($29/mo), Growth ($79/mo), and Enterprise (custom).";
   }
-  return `Thank you for reaching out to Virallens Support! I've logged your query regarding "${messages[messages.length - 1].content}". Our team is on it, and I'm here to help answer any questions about our AI-native growth and support tools.`;
+  return `Thank you for contacting Virallens Support. I've recorded your inquiry regarding "${messages[messages.length - 1].content}".`;
 }
 
 exports.sendMessage = async (req, res) => {
@@ -121,13 +149,20 @@ exports.sendMessage = async (req, res) => {
       return res.status(400).json({ error: 'Message content is required.' });
     }
 
-    // 1. Perform Hybrid RAG Search (Vector Cosine Similarity + Keyword Full-Text Search)
+    // 1. Hybrid RAG Search (Global KB + User Uploaded Memory)
     let ragContext = '';
     try {
-      const searchResults = await hybridSearch(message, 3);
-      if (searchResults && searchResults.length > 0) {
-        ragContext = searchResults.map(r => `[Article: ${r.doc.title}]\n${r.doc.content}`).join('\n\n');
+      const [globalResults, userDocContext] = await Promise.all([
+        hybridSearch(message, 3),
+        searchUserDocuments(userId, message)
+      ]);
+
+      let parts = [];
+      if (userDocContext) parts.push(userDocContext);
+      if (globalResults && globalResults.length > 0) {
+        parts.push(globalResults.map(r => `[Topic: ${r.doc.title}]\n${r.doc.content}`).join('\n\n'));
       }
+      ragContext = parts.join('\n\n');
     } catch (ragErr) {
       console.error('Hybrid RAG search error:', ragErr.message);
     }
@@ -145,7 +180,6 @@ exports.sendMessage = async (req, res) => {
       });
     }
 
-    // Idempotency check
     const lastMsg = chat.messages[chat.messages.length - 1];
     if (lastMsg && lastMsg.sender === 'user' && lastMsg.content === message.trim() && (Date.now() - new Date(lastMsg.timestamp).getTime() < 5000)) {
       return res.json({

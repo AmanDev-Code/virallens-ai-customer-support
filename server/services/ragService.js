@@ -1,13 +1,7 @@
 const KnowledgeBase = require('../models/KnowledgeBase');
 
-// --- Embedding Generation ---
-// Uses a free model via OpenRouter to generate text embeddings
-// Falls back to simple TF-IDF-style keyword vectors if embedding API is unavailable
-
 async function generateEmbedding(text) {
   const apiKey = process.env.OPENROUTER_API_KEY;
-
-  // Try OpenRouter embedding endpoint first
   try {
     const res = await fetch('https://openrouter.ai/api/v1/embeddings', {
       method: 'POST',
@@ -31,7 +25,6 @@ async function generateEmbedding(text) {
     console.warn('Embedding API unavailable, falling back to local keyword vectors.');
   }
 
-  // Fallback: lightweight local keyword vector (bag-of-words style, 128 dims)
   return generateLocalEmbedding(text);
 }
 
@@ -46,12 +39,10 @@ function generateLocalEmbedding(text, dims = 128) {
     const idx = Math.abs(hash) % dims;
     vec[idx] += 1;
   }
-  // Normalize
   const mag = Math.sqrt(vec.reduce((s, v) => s + v * v, 0)) || 1;
   return vec.map(v => v / mag);
 }
 
-// --- Cosine Similarity ---
 function cosineSimilarity(a, b) {
   if (a.length !== b.length) return 0;
   let dot = 0, magA = 0, magB = 0;
@@ -63,12 +54,9 @@ function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(magA) * Math.sqrt(magB) || 1);
 }
 
-// --- Hybrid Search (Vector + Keyword) with Reciprocal Rank Fusion ---
-
 async function hybridSearch(query, topK = 5) {
   const queryEmbedding = await generateEmbedding(query);
 
-  // 1. Vector Search: compute cosine similarity against all docs' stored embeddings
   const allDocs = await KnowledgeBase.find({ embedding: { $exists: true, $ne: [] } });
   const vectorResults = allDocs
     .map(doc => ({
@@ -78,7 +66,6 @@ async function hybridSearch(query, topK = 5) {
     .sort((a, b) => b.score - a.score)
     .slice(0, topK * 2);
 
-  // 2. Keyword Search: MongoDB full-text $text search
   let keywordResults = [];
   try {
     keywordResults = await KnowledgeBase.find(
@@ -86,11 +73,9 @@ async function hybridSearch(query, topK = 5) {
       { score: { $meta: 'textScore' } }
     ).sort({ score: { $meta: 'textScore' } }).limit(topK * 2);
   } catch (err) {
-    // Text index might not exist yet
     console.warn('Text search unavailable:', err.message);
   }
 
-  // 3. Reciprocal Rank Fusion (RRF) to merge both rankings
   const RRF_K = 60;
   const fusedScores = new Map();
 
@@ -112,13 +97,12 @@ async function hybridSearch(query, topK = 5) {
     }
   });
 
-  // Sort by fused RRF score
   const results = [];
-  for (const [key, value] of fusedScores) {
+  for (const [key] of fusedScores) {
     if (!key.endsWith('_doc') && fusedScores.has(key + '_doc')) {
       results.push({
         doc: fusedScores.get(key + '_doc'),
-        score: value
+        score: fusedScores.get(key)
       });
     }
   }
@@ -127,60 +111,58 @@ async function hybridSearch(query, topK = 5) {
   return results.slice(0, topK);
 }
 
-// --- Seed Default Knowledge Base ---
-
 async function seedKnowledgeBase() {
   const count = await KnowledgeBase.countDocuments();
   if (count > 0) return;
 
   const articles = [
     {
-      title: 'Getting Started with Virallens',
-      content: 'Virallens is an AI-Native Autonomous Growth & Support platform. To get started, create an account, connect your social profiles, and set up your first campaign. The dashboard provides real-time analytics and engagement tracking.',
-      category: 'onboarding',
-      keywords: ['getting started', 'setup', 'create account', 'dashboard', 'onboarding']
+      title: 'Virallens Platform Overview',
+      content: 'Virallens is an AI-Native Autonomous Growth Operating System designed specifically for LinkedIn-first creators, startups, and growth teams. It combines automated pipeline scheduling, lead intelligence, AI-driven content generation, and autonomous support workflows.',
+      category: 'overview',
+      keywords: ['virallens', 'overview', 'ai-native', 'growth', 'linkedin', 'autonomous']
     },
     {
-      title: 'Pricing Plans and Billing',
-      content: 'Virallens offers three plans: Starter ($29/month for individual creators), Growth ($79/month for small teams up to 5 members), and Enterprise (custom pricing for large organizations). All plans include AI-powered support, analytics, and content scheduling. Billing is monthly or annual (20% discount for annual).',
+      title: 'Pricing & Subscription Tiers',
+      content: 'Virallens offers three transparent tiers: 1) Starter ($29/mo) for solo creators with core scheduling and AI caption generation. 2) Growth ($79/mo) for teams up to 5 members with advanced analytics, lead enrichment, and CRM integrations. 3) Enterprise (Custom) with dedicated account management, custom LLM fine-tuning, and SLA guarantees.',
       category: 'billing',
-      keywords: ['pricing', 'cost', 'billing', 'plans', 'payment', 'subscription', 'enterprise']
+      keywords: ['pricing', 'cost', 'starter', 'growth', 'enterprise', 'subscription', 'plans']
     },
     {
-      title: 'How to Reset Your Password',
-      content: 'To reset your password: 1) Go to the login page. 2) Click "Forgot Password". 3) Enter your email address. 4) Check your inbox for a reset link. 5) Click the link and set a new password. The link expires after 30 minutes for security.',
-      category: 'account',
-      keywords: ['password', 'reset', 'forgot', 'login', 'security', 'account recovery']
-    },
-    {
-      title: 'AI Content Generation Features',
-      content: 'Virallens uses advanced AI models to generate social media captions, blog post drafts, ad copy, and email newsletters. Supported platforms include LinkedIn, Twitter/X, Instagram, and Facebook. You can customize tone, length, and target audience for each piece of content.',
-      category: 'features',
-      keywords: ['ai', 'content', 'generation', 'social media', 'captions', 'blog', 'linkedin']
-    },
-    {
-      title: 'Reporting Bugs and Technical Issues',
-      content: 'If you encounter a bug or technical issue: 1) Take a screenshot of the error. 2) Note the steps to reproduce the problem. 3) Contact support through this chat or email support@virallens.com. 4) Include your browser version and operating system. Our engineering team typically responds within 4 hours.',
-      category: 'support',
-      keywords: ['bug', 'error', 'issue', 'problem', 'technical', 'crash', 'fix', 'report']
-    },
-    {
-      title: 'API Integration and Webhooks',
-      content: 'Virallens provides a REST API for programmatic access. API keys can be generated from Settings > Developer > API Keys. Webhooks allow real-time event notifications for content publication, engagement milestones, and campaign completions. Rate limits are 1000 requests per hour for Growth plans and unlimited for Enterprise.',
-      category: 'developer',
-      keywords: ['api', 'integration', 'webhook', 'developer', 'rest', 'programmatic', 'rate limit']
-    },
-    {
-      title: 'Data Privacy and Security',
-      content: 'Virallens is fully GDPR and CCPA compliant. All data is encrypted at rest (AES-256) and in transit (TLS 1.3). We never sell user data. You can export or delete all your data at any time from Settings > Privacy > Data Management. Two-factor authentication (2FA) is available for all accounts.',
+      title: 'Password Reset & Account Security',
+      content: 'To reset your password securely, navigate to the login portal, click "Forgot Password", and enter your registered email. A cryptographic reset token valid for 30 minutes will be emailed to you. Passwords must be at least 8 characters with a mix of numbers and symbols.',
       category: 'security',
-      keywords: ['privacy', 'security', 'gdpr', 'data', 'encryption', 'compliance', '2fa', 'delete data']
+      keywords: ['password', 'reset', 'security', 'login', 'account', 'auth']
     },
     {
-      title: 'Team Collaboration and Roles',
-      content: 'Growth and Enterprise plans support team collaboration. Available roles are: Owner (full access), Admin (manage members, campaigns), Editor (create and edit content), and Viewer (read-only analytics). Invite team members from Settings > Team > Invite. Each member gets their own login credentials.',
+      title: 'AI Content Generation & Custom Prompts',
+      content: 'Virallens uses state-of-the-art LLMs (including Nvidia Nemotron and GPT-4o-mini) to generate high-performing LinkedIn posts, threads, and newsletters. You can define custom brand voice guidelines, tone sliders (professional, witty, authoritative), and reusable prompt templates.',
       category: 'features',
-      keywords: ['team', 'collaboration', 'roles', 'invite', 'members', 'admin', 'permissions']
+      keywords: ['ai', 'content', 'generation', 'prompts', 'brand voice', 'linkedin', 'threads']
+    },
+    {
+      title: 'Bug Reporting & Engineering Support',
+      content: 'Encountering a bug or unexpected error? Report it directly through this support chat or email support@virallens.com with steps to reproduce and browser details. Our engineering triage team investigates all bug reports within 2 hours during business days.',
+      category: 'support',
+      keywords: ['bug', 'error', 'issue', 'report', 'support', 'engineering', 'triage']
+    },
+    {
+      title: 'REST API, Webhooks & Developer Access',
+      content: 'Developers can access Virallens programmatically via our REST API. Generate API keys under Settings > Developer. Configure webhooks for real-time event subscriptions including content published, lead converted, and campaign completed. Rate limits are set to 1000 req/hour for Growth tiers.',
+      category: 'developer',
+      keywords: ['api', 'webhook', 'developer', 'rest', 'keys', 'rate limit', 'integration']
+    },
+    {
+      title: 'GDPR, CCPA & Data Privacy Compliance',
+      content: 'Virallens adheres strictly to GDPR and CCPA privacy regulations. All data is encrypted at rest using AES-256 and in transit via TLS 1.3. Users retain full ownership of their data and can export or permanently purge their account data at any time from Settings > Privacy.',
+      category: 'security',
+      keywords: ['gdpr', 'ccpa', 'privacy', 'compliance', 'encryption', 'aes-256', 'data purge']
+    },
+    {
+      title: 'Team Collaboration, Roles & Permissions',
+      content: 'Collaborate seamlessly with role-based access control (RBAC). Roles include Owner, Admin, Editor, and Viewer. Invite teammates via Settings > Team by entering their email address and assigning their role.',
+      category: 'team',
+      keywords: ['team', 'collaboration', 'roles', 'permissions', 'rbac', 'invite', 'admin']
     }
   ];
 
@@ -189,7 +171,7 @@ async function seedKnowledgeBase() {
   }
 
   await KnowledgeBase.insertMany(articles);
-  console.log(`Seeded ${articles.length} knowledge base articles with embeddings.`);
+  console.log(`Seeded ${articles.length} rich Virallens knowledge base articles.`);
 }
 
 module.exports = { hybridSearch, generateEmbedding, seedKnowledgeBase };

@@ -5,6 +5,7 @@ require('dotenv').config();
 
 const authRoutes = require('./routes/authRoutes');
 const chatRoutes = require('./routes/chatRoutes');
+const documentRoutes = require('./routes/documentRoutes');
 
 const app = express();
 
@@ -15,6 +16,7 @@ app.use(express.json());
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/documents', documentRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', service: 'Virallens AI Support API', timestamp: new Date().toISOString() });
@@ -32,7 +34,6 @@ mongoose.connect(MONGODB_URI)
   })
   .catch(err => {
     console.error('MongoDB connection error:', err);
-    // Start server anyway for standalone / demo mode
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT} (Database offline mode / Mock storage)`);
     });
