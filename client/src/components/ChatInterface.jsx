@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { apiRequest } from '../utils/api';
-import { Bot, Send, User, LogOut, Plus, MessageSquare, Sparkles, ShieldCheck, Cpu, HardDrive, Paperclip, X, FileText } from 'lucide-react';
+import { Bot, Send, User, LogOut, Plus, MessageSquare, Sparkles, ShieldCheck, Cpu, HardDrive, Paperclip, X, FileText, Menu } from 'lucide-react';
 import MemoryModal from './MemoryModal';
 
 export default function ChatInterface({ user, onLogout }) {
@@ -14,6 +14,7 @@ export default function ChatInterface({ user, onLogout }) {
   const [loading, setLoading] = useState(false);
   const [typingStage, setTypingStage] = useState('Analysing query...');
   const [isMemoryModalOpen, setIsMemoryModalOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
@@ -37,6 +38,7 @@ export default function ChatInterface({ user, onLogout }) {
   const handleSelectConversation = async (conv) => {
     setCurrentConversationId(conv._id);
     setMessages(conv.messages || []);
+    setIsSidebarOpen(false);
   };
 
   const handleNewChat = () => {
@@ -44,6 +46,7 @@ export default function ChatInterface({ user, onLogout }) {
     setMessages([
       { sender: 'assistant', content: `Hello ${user.name}! Starting a fresh autonomous support session. What can I help you optimize?` }
     ]);
+    setIsSidebarOpen(false);
   };
 
   const handleFileSelect = (e) => {
@@ -116,9 +119,19 @@ export default function ChatInterface({ user, onLogout }) {
   };
 
   return (
-    <div className="flex h-screen bg-[#07090e] text-slate-100 overflow-hidden font-sans">
+    <div className="flex h-screen bg-[#07090e] text-slate-100 overflow-hidden font-sans relative">
+      {/* Mobile Sidebar Backdrop */}
+      {isSidebarOpen && (
+        <div
+          onClick={() => setIsSidebarOpen(false)}
+          className="fixed inset-0 bg-black/60 z-30 md:hidden backdrop-blur-sm"
+        />
+      )}
+
       {/* Sidebar */}
-      <div className="w-80 bg-[#0b0e17] border-r border-slate-800/80 flex flex-col flex-shrink-0">
+      <div className={`absolute md:relative z-40 inset-y-0 left-0 w-80 bg-[#0b0e17] border-r border-slate-800/80 flex flex-col flex-shrink-0 transform transition-transform duration-300 ease-in-out ${
+        isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+      }`}>
         <div className="p-5 border-b border-slate-800/80 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-400 flex items-center justify-center text-white shadow-lg shadow-emerald-600/20">
@@ -132,6 +145,12 @@ export default function ChatInterface({ user, onLogout }) {
               </div>
             </div>
           </div>
+          <button
+            onClick={() => setIsSidebarOpen(false)}
+            className="md:hidden p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         <div className="p-4 space-y-2">
@@ -196,42 +215,49 @@ export default function ChatInterface({ user, onLogout }) {
 
       {/* Main Chat Window */}
       <div className="flex-1 flex flex-col bg-[#07090e] min-w-0">
-        <div className="h-16 border-b border-slate-800/80 flex items-center justify-between px-6 bg-[#0b0e17]/80 backdrop-blur-md flex-shrink-0">
+        <div className="h-16 border-b border-slate-800/80 flex items-center justify-between px-4 sm:px-6 bg-[#0b0e17]/80 backdrop-blur-md flex-shrink-0">
           <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="md:hidden p-2 text-slate-300 hover:text-white rounded-lg hover:bg-slate-800"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hidden sm:block">
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h1 className="font-semibold text-slate-100 text-sm">Virallens Support & Growth Agent</h1>
-              <p className="text-[11px] text-slate-400">Hybrid Vector RAG + Nemotron-3.5 Intelligence</p>
+              <h1 className="font-semibold text-slate-100 text-xs sm:text-sm">Virallens Support & Growth Agent</h1>
+              <p className="text-[10px] sm:text-[11px] text-slate-400 truncate max-w-[200px] sm:max-w-none">Hybrid Vector RAG + Nemotron-3.5 Intelligence</p>
             </div>
           </div>
-          <div className="flex items-center space-x-2 text-xs text-slate-300 bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/20">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span className="font-medium">Encrypted & Rate-Limited</span>
+          <div className="flex items-center space-x-2 text-[11px] sm:text-xs text-slate-300 bg-emerald-500/10 px-2.5 sm:px-3 py-1.5 rounded-full border border-emerald-500/25">
+            <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 flex-shrink-0" />
+            <span className="font-medium hidden xs:inline">Encrypted & Rate-Limited</span>
+            <span className="font-medium inline xs:hidden">Secure</span>
           </div>
         </div>
 
         {/* Messages Stream */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
           {messages.map((msg, idx) => (
             <div
               key={idx}
-              className={`flex items-start space-x-3 sm:space-x-4 max-w-3xl w-full ${
+              className={`flex items-start space-x-3 sm:space-x-4 max-w-4xl w-full ${
                 msg.sender === 'user' ? 'ml-auto flex-row-reverse space-x-reverse' : ''
               }`}
             >
               <div
-                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg ${
+                className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg ${
                   msg.sender === 'user'
                     ? 'bg-gradient-to-tr from-emerald-600 to-teal-500 text-white shadow-emerald-600/30'
                     : 'bg-gradient-to-tr from-teal-600 to-cyan-500 text-white shadow-teal-600/20'
                 }`}
               >
-                {msg.sender === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
+                {msg.sender === 'user' ? <User className="w-4 h-4 sm:w-5 sm:h-5" /> : <Bot className="w-4 h-4 sm:w-5 sm:h-5" />}
               </div>
               <div
-                className={`px-5 py-4 rounded-2xl text-sm leading-relaxed shadow-md max-w-[calc(100%-4rem)] sm:max-w-2xl break-words ${
+                className={`px-4 sm:px-5 py-3 sm:py-4 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-md max-w-[calc(100%-3.5rem)] sm:max-w-2xl break-words ${
                   msg.sender === 'user'
                     ? 'bg-emerald-600 text-white rounded-tr-none shadow-emerald-600/20'
                     : 'bg-[#111625] border border-slate-800 text-slate-100 rounded-tl-none shadow-xl'
@@ -243,17 +269,17 @@ export default function ChatInterface({ user, onLogout }) {
           ))}
 
           {loading && (
-            <div className="flex items-start space-x-4 max-w-3xl">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-teal-600 to-cyan-500 flex items-center justify-center text-white shadow-lg shadow-teal-600/20">
-                <Bot className="w-5 h-5" />
+            <div className="flex items-start space-x-3 sm:space-x-4 max-w-4xl">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-teal-600 to-cyan-500 flex items-center justify-center text-white shadow-lg shadow-teal-600/20">
+                <Bot className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
-              <div className="bg-[#111625] border border-slate-800 px-5 py-4 rounded-2xl rounded-tl-none text-slate-300 text-sm shadow-xl flex items-center space-x-3">
+              <div className="bg-[#111625] border border-slate-800 px-4 sm:px-5 py-3 sm:py-4 rounded-2xl rounded-tl-none text-slate-300 text-xs sm:text-sm shadow-xl flex items-center space-x-3">
                 <div className="flex space-x-1.5 items-center">
                   <span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce"></span>
                   <span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce [animation-delay:0.2s]"></span>
                   <span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce [animation-delay:0.4s]"></span>
                 </div>
-                <span className="text-xs font-medium text-emerald-300 tracking-wide">{typingStage}</span>
+                <span className="text-[11px] sm:text-xs font-medium text-emerald-300 tracking-wide">{typingStage}</span>
               </div>
             </div>
           )}
@@ -261,7 +287,7 @@ export default function ChatInterface({ user, onLogout }) {
         </div>
 
         {/* Input Bar with Attachment */}
-        <div className="p-4 border-t border-slate-800/80 bg-[#0b0e17]/80 backdrop-blur-md flex-shrink-0">
+        <div className="p-3 sm:p-4 border-t border-slate-800/80 bg-[#0b0e17]/80 backdrop-blur-md flex-shrink-0">
           <div className="max-w-4xl mx-auto space-y-2">
             {attachedFile && (
               <div className="flex items-center justify-between bg-emerald-950/60 border border-emerald-500/30 px-3.5 py-2 rounded-xl text-xs text-emerald-200">
@@ -292,7 +318,7 @@ export default function ChatInterface({ user, onLogout }) {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 title="Attach document or image (MD, TXT, PDF, JSON, Images)"
-                className="absolute left-3.5 p-2 text-slate-400 hover:text-emerald-400 rounded-xl hover:bg-slate-800/50 transition-colors cursor-pointer"
+                className="absolute left-3 p-2 text-slate-400 hover:text-emerald-400 rounded-xl hover:bg-slate-800/50 transition-colors cursor-pointer z-10"
               >
                 <Paperclip className="w-5 h-5" />
               </button>
@@ -300,13 +326,13 @@ export default function ChatInterface({ user, onLogout }) {
                 type="text"
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
-                placeholder="Ask anything or attach a document (MD, TXT, PDF, JSON, Image)..."
-                className="w-full bg-[#111625] border border-slate-700/80 rounded-2xl pl-13 pr-14 py-4 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm shadow-inner transition-all"
+                placeholder="Ask anything or attach a document..."
+                className="w-full bg-[#111625] border border-slate-700/80 rounded-2xl pl-12 sm:pl-13 pr-14 py-3.5 sm:py-4 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-xs sm:text-sm shadow-inner transition-all"
               />
               <button
                 type="submit"
                 disabled={loading || (!inputMessage.trim() && !attachedFile)}
-                className="absolute right-2.5 p-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                className="absolute right-2 p-2 sm:p-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer z-10"
               >
                 <Send className="w-4 h-4" />
               </button>
