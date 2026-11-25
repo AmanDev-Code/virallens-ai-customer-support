@@ -2,15 +2,13 @@ const Chat = require('../models/Chat');
 const UserDocument = require('../models/UserDocument');
 const { hybridSearch, generateEmbedding, seedKnowledgeBase } = require('../services/ragService');
 
-// Ensure knowledge base is seeded
 seedKnowledgeBase().catch(err => console.error('Failed to seed KB:', err));
 
-// Circuit Breaker State & Guardrails
-let circuitState = 'CLOSED'; // CLOSED, OPEN, HALF-OPEN
+let circuitState = 'CLOSED';
 let failureCount = 0;
 let lastFailureTime = null;
 const FAILURE_THRESHOLD = 3;
-const RESET_TIMEOUT_MS = 30000; // 30 seconds
+const RESET_TIMEOUT_MS = 30000;
 const MAX_RETRIES = 2;
 
 function cosineSimilarity(a, b) {
@@ -26,16 +24,22 @@ function cosineSimilarity(a, b) {
 
 async function searchUserDocuments(userId, query) {
   try {
-    const userDocs = await UserDocument.find({ userId, embedding: { $exists: true, $ne: [] } });
+    const userDocs = await UserDocument.find({ userId }).sort({ createdAt: -1 });
     if (userDocs.length === 0) return '';
+
+    // If query mentions attached or recent, return the most recent doc text directly
+    if (query.toLowerCase().includes('attach') || query.toLowerCase().includes('document') || query.toLowerCase().includes('pdf') || query.toLowerCase().includes('file')) {
+      const latest = userDocs[0];
+      return `[User Recently Attached Document: ${latest.originalName}]\n${latest.extractedText}`;
+    }
 
     const queryEmbedding = await generateEmbedding(query);
     const scored = userDocs.map(doc => ({
       doc,
-      score: cosineSimilarity(queryEmbedding, doc.embedding)
+      score: doc.embedding && doc.embedding.length > 0 ? cosineSimilarity(queryEmbedding, doc.embedding) : 0.5
     })).sort((a, b) => b.score - a.score);
 
-    if (scored.length > 0 && scored[0].score > 0.3) {
+    if (scored.length > 0) {
       return `[User Uploaded Memory: ${scored[0].doc.originalName}]\n${scored[0].doc.extractedText}`;
     }
   } catch (err) {
@@ -61,13 +65,13 @@ async function callAIAgentWithResilience(messages, ragContext = '', attempt = 1)
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     const systemPrompt = `You are an elite, professional, and empathetic AI customer support lead for Virallens, an AI-Native Autonomous Growth & Support operating system.
-Use the following Verified Knowledge Base Context and User Memory to answer the user's question accurately.
+Analyze the user's attached documents, specifications, or support queries below and provide an exceptionally clear, thorough, and structured response.
 
---- Verified Knowledge Base & User Memory Context ---
-${ragContext || 'No specific knowledge base article matched.'}
+--- Verified Knowledge Base & User Document Memory ---
+${ragContext || 'No specific document or knowledge base article matched.'}
 ------------------------------------------------------`;
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -85,7 +89,7 @@ ${ragContext || 'No specific knowledge base article matched.'}
           ...messages
         ],
         temperature: 0.3,
-        max_tokens: 1024
+        max_tokens: 1500
       }),
       signal: controller.signal
     });
@@ -129,13 +133,11 @@ function getFallbackResponse(messages, ragContext) {
   const lastMsg = messages[messages.length - 1].content.toLowerCase();
 
   if (ragContext) {
-    return `Based on Virallens documentation and your uploaded memory:\n\n${ragContext.substring(0, 500)}\n\nHow else can I assist you with your growth workflows today?`;
+    return `Based on your attached document and Virallens knowledge base:\n\n${ragContext.substring(0, 1000)}\n\nHow would you like to proceed with this assignment or support request?`;
   }
 
   if (lastMsg.includes('hello') || lastMsg.includes('hi')) {
     return "Hello! Welcome to Virallens Support. I am your autonomous AI growth and support assistant. How can I help optimize your workflows today?";
-  } else if (lastMsg.includes('pricing') || lastMsg.includes('cost')) {
-    return "Virallens offers flexible pricing tailored for creators and growth teams: Starter ($29/mo), Growth ($79/mo), and Enterprise (custom).";
   }
   return `Thank you for contacting Virallens Support. I've recorded your inquiry regarding "${messages[messages.length - 1].content}".`;
 }
@@ -149,7 +151,6 @@ exports.sendMessage = async (req, res) => {
       return res.status(400).json({ error: 'Message content is required.' });
     }
 
-    // 1. Hybrid RAG Search (Global KB + User Uploaded Memory)
     let ragContext = '';
     try {
       const [globalResults, userDocContext] = await Promise.all([

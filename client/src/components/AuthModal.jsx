@@ -36,7 +36,7 @@ export default function AuthModal({ onLoginSuccess }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-gray-900 to-black flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-gray-900/80 backdrop-blur-xl border border-gray-800 rounded-2xl shadow-2xl overflow-hidden p-8">
+      <div className="max-w-md w-full bg-gray-900/90 backdrop-blur-xl border border-gray-800 rounded-2xl shadow-2xl overflow-hidden p-8">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-indigo-400 text-white shadow-lg mb-4">
             <Bot className="w-8 h-8" />
@@ -65,7 +65,7 @@ export default function AuthModal({ onLoginSuccess }) {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Alex Johnson"
-                  className="w-full pl-10 pr-4 py-3 bg-gray-800/60 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+                  className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
                 />
               </div>
             </div>
@@ -83,7 +83,7 @@ export default function AuthModal({ onLoginSuccess }) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="alex@example.com"
-                className="w-full pl-10 pr-4 py-3 bg-gray-800/60 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+                className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
               />
             </div>
           </div>
@@ -100,7 +100,7 @@ export default function AuthModal({ onLoginSuccess }) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full pl-10 pr-4 py-3 bg-gray-800/60 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+                className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
               />
             </div>
           </div>
@@ -108,7 +108,7 @@ export default function AuthModal({ onLoginSuccess }) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-2 py-3 px-4 bg-gradient-to-r from-brand-600 to-indigo-500 hover:from-brand-500 hover:to-indigo-400 text-white font-medium rounded-xl shadow-lg shadow-brand-600/30 flex items-center justify-center space-x-2 transition-all disabled:opacity-50 text-sm"
+            className="w-full mt-2 py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center space-x-2 transition-all disabled:opacity-50 text-sm cursor-pointer"
           >
             <span>{loading ? 'Please wait...' : (isLogin ? 'Sign In' : 'Create Account')}</span>
             <ArrowRight className="w-4 h-4" />
@@ -117,8 +117,9 @@ export default function AuthModal({ onLoginSuccess }) {
 
         <div className="mt-6 text-center">
           <button
+            type="button"
             onClick={() => setIsLogin(!isLogin)}
-            className="text-xs text-brand-400 hover:text-brand-300 transition-colors"
+            className="text-sm font-semibold text-indigo-400 hover:text-indigo-300 underline cursor-pointer transition-colors"
           >
             {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
           </button>

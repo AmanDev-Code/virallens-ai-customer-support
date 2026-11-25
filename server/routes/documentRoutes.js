@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const pdfParse = require('pdf-parse');
 const UserDocument = require('../models/UserDocument');
 const auth = require('../middleware/auth');
 const { generateEmbedding } = require('../services/ragService');
@@ -25,10 +26,19 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit per file
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit per file
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /pdf|md|txt|json|png|jpg|jpeg|webp/i;
+    const extname = allowedTypes.test(path.extname(file.originalname));
+    const mimetype = allowedTypes.test(file.mimetype) || file.mimetype.includes('pdf') || file.mimetype.includes('text') || file.mimetype.includes('image') || file.mimetype.includes('json');
+    if (extname || mimetype) {
+      return cb(null, true);
+    }
+    cb(new Error('Only .md, .txt, .pdf, .json, and image files are allowed!'));
+  }
 });
 
-// Upload Document with 10MB user quota check
+// Upload Document with 10MB user quota check & real PDF parsing
 router.post('/upload', auth, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -44,22 +54,29 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
     const MAX_QUOTA_BYTES = 10 * 1024 * 1024; // 10 MB
 
     if (currentTotalBytes + fileSize > MAX_QUOTA_BYTES) {
-      // Remove uploaded temp file
       fs.unlinkSync(req.file.path);
       return res.status(400).json({
         error: `Storage quota exceeded! You have used ${(currentTotalBytes / (1024 * 1024)).toFixed(2)}MB of your 10MB limit. Delete some documents to free up memory.`
       });
     }
 
-    // Read text content if txt/json/md, or mock sample for binaries
     let extractedText = '';
+    const ext = path.extname(req.file.originalname).toLowerCase();
+
     try {
-      if (req.file.mimetype.includes('text') || req.file.originalname.endsWith('.md') || req.file.originalname.endsWith('.json')) {
+      if (ext === '.txt' || ext === '.md' || ext === '.json' || req.file.mimetype.includes('text') || req.file.mimetype.includes('json')) {
         extractedText = fs.readFileSync(req.file.path, 'utf8');
+      } else if (ext === '.pdf' || req.file.mimetype.includes('pdf')) {
+        const dataBuffer = fs.readFileSync(req.file.path);
+        const pdfData = await pdfParse(dataBuffer);
+        extractedText = pdfData.text || `PDF Document: ${req.file.originalname}`;
+      } else if (req.file.mimetype.includes('image')) {
+        extractedText = `Uploaded Image Attachment: ${req.file.originalname}. Visual reference image provided by user for support troubleshooting.`;
       } else {
-        extractedText = `Uploaded document: ${req.file.originalname} (${req.file.mimetype})`;
+        extractedText = fs.readFileSync(req.file.path, 'utf8');
       }
     } catch (readErr) {
+      console.error('File parse error:', readErr);
       extractedText = `Uploaded document: ${req.file.originalname}`;
     }
 
@@ -79,18 +96,19 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
     await doc.save();
 
     res.status(201).json({
-      message: 'Document uploaded and indexed successfully into vector memory.',
+      message: 'File attached and indexed into vector memory successfully.',
       document: {
         id: doc._id,
         originalName: doc.originalName,
         size: doc.size,
-        createdAt: doc.createdAt
+        createdAt: doc.createdAt,
+        extractedText: extractedText.substring(0, 300) + '...' // Preview snippet
       },
       quotaUsed: currentTotalBytes + fileSize
     });
   } catch (err) {
     console.error('Upload error:', err);
-    res.status(500).json({ error: 'Server error processing file upload.' });
+    res.status(500).json({ error: err.message || 'Server error processing file upload.' });
   }
 });
 
@@ -117,7 +135,7 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// Delete document (Free up memory)
+// Delete document
 router.delete('/:id', auth, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -128,7 +146,6 @@ router.delete('/:id', auth, async (req, res) => {
       return res.status(404).json({ error: 'Document not found or unauthorized.' });
     }
 
-    // Delete file from disk
     if (fs.existsSync(doc.path)) {
       fs.unlinkSync(doc.path);
     }
