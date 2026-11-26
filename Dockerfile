@@ -2,12 +2,13 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy client source files
-COPY client/ ./client/
-
-# Build Client
+# Copy package files first for caching
+COPY client/package*.json ./client/
 WORKDIR /app/client
 RUN npm install
+
+# Copy rest of client source
+COPY client/ ./
 RUN npm run build
 
 # Build Server dependencies
