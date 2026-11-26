@@ -1,26 +1,16 @@
 version: '3.8'
 
 services:
-  mongodb:
-    image: mongo:latest
-    container_name: virallens-mongo
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
-
-  backend:
+  app:
     build: .
-    container_name: virallens-backend
+    container_name: virallens-support-app
     ports:
       - "5000:5000"
     environment:
       - PORT=5000
-      - MONGODB_URI=mongodb://mongodb:27017/ai-customer-support
-      - JWT_SECRET=virallens_super_secret_docker_key
-      - OPENROUTER_API_KEY=your_openrouter_api_key_here
-    depends_on:
-      - mongodb
-
-volumes:
-  mongo_data:
+      - MONGODB_URI=${MONGODB_URI}
+      - JWT_SECRET=${JWT_SECRET}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - AI_MODEL=${AI_MODEL:-nvidia/nemotron-3.5-super-vl:free}
+      - NODE_ENV=production
+    restart: always
