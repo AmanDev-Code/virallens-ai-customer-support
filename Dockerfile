@@ -2,13 +2,11 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Build Client (install all dependencies including devDependencies for Vite/Tailwind build)
-COPY client/package*.json ./client/
-RUN cd client && npm install
+# Copy client source files FIRST, then install dependencies and build
 COPY client/ ./client/
-RUN cd client && npm run build
+RUN cd client && npm install && npm run build
 
-# Install Server dependencies (production only)
+# Install Server dependencies
 COPY server/package*.json ./server/
 RUN cd server && npm install --production
 
